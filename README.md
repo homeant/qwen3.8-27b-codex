@@ -3,45 +3,21 @@
 让 `Qwen3.8-27B-Uncensored.Q4_K_M.gguf` 这个 GGUF 既能被 **ollama** 正常加载，
 也能被 **codex CLI**（0.163+，走 `/v1/responses`）正常调用。
 
-## 背景：为什么有两个模板
+## 背景
 
-一个 GGUF 里有两套「对话转 prompt」的模板：
-
-| 模板 | 存放位置 | 被谁使用 |
-|------|----------|----------|
-| Go `TEMPLATE` | 你的 Modelfile 里 | ollama 的 `/api/chat`、`/v1/chat/completions` |
-| Jinja `tokenizer.chat_template` | **GGUF 文件内部** | ollama 的 `/v1/responses`（codex 用的就是它） |
-
-关键点：**codex 0.163 只支持 `wire_api = "responses"`**，走的是 GGUF 内部那个
-Jinja 模板，而不是 Modelfile 里的 Go `TEMPLATE`。
-
-上游 GGUF 自带的 Jinja 模板是 vLLM / HuggingFace 风格，有两个问题会让 codex 直接报错：
-
-1. **`System message must be at the beginning.`** —— codex 会发两条 `developer`
-   消息，ollama 把它们转成两条 `system` 消息，而 vLLM 模板要求 system 必须在第一条。
-2. **工具调用格式不对** —— vLLM 模板输出 `<function>/<parameter>` 格式，
-   而 ollama/codex 期望的是 OpenAI 的 `<tool_call>{"name": ..., "arguments": {...}}</tool_call>`。
-
-本仓库提供两个版本：
-
-- `chat-template.ollama.jinja` —— **修正版**，给 ollama + codex 用（合并多条
-  system/developer、OpenAI `<tool_call>` 格式、放宽 `reasoning_effort` 取值）。
-- `chat-template.vllm.jinja` —— **原版**（vLLM / HF 风格），如果你想恢复或给
-  vLLM / HF 直接用，保留这个。
-
-## 文件清单
+本仓库各文件的作用如下：
 
 | 文件 | 说明 |
 |------|------|
-| `Modelfile` | ollama 用的 Modelfile（含 Go `TEMPLATE`，供 `/v1/chat/completions` 走） |
-| `chat-template.ollama.jinja` | 修正版 Jinja 模板（打补丁进 GGUF） |
-| `chat-template.vllm.jinja` | 原版 vLLM Jinja 模板（打补丁进 GGUF 恢复） |
+| `Modelfile` | ollama 使用的模型定义文件，内含 Go `TEMPLATE`，供 `/v1/chat/completions` 使用 |
+| `chat-template.ollama.jinja` | 修正版 Jinja 模板，打补丁进 GGUF，供 ollama `/v1/responses`（codex）使用 |
+| `chat-template.vllm.jinja` | 原版 vLLM / HuggingFace Jinja 模板，用于恢复 GGUF 原始模板 |
 | `patch-gguf-chat-template.py` | 就地替换 GGUF 内嵌模板的脚本 |
 
 ## 使用方法
 
 > **⚠️ 第一步必须先下载模型文件。** 本仓库**不包含** GGUF 模型权重
-> （约 16.8GB），需要你自己从 HuggingFace 下载。
+> （约 16.8GB），需从 HuggingFace 下载。
 
 ### 1. 下载 GGUF（必需，先做这一步）
 
@@ -64,7 +40,7 @@ huggingface-cli download mradermacher/Qwen3.8-27B-Uncensored-GGUF Qwen3.8-27B-Un
 # 用修正版模板（ollama + codex 用）
 python3 patch-gguf-chat-template.py Qwen3.8-27B-Uncensored.Q4_K_M.gguf chat-template.ollama.jinja
 
-# 如果之后想恢复原版
+# 如需恢复原版
 python3 patch-gguf-chat-template.py Qwen3.8-27B-Uncensored.Q4_K_M.gguf chat-template.vllm.jinja
 ```
 
